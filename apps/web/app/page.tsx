@@ -1,15 +1,16 @@
-import { Button } from "@workspace/ui/components/button"
+import { redirect } from "next/navigation";
+import { createClient } from "@workspace/supabase/server";
 
-export default function Page() {
-  return (
-    <div className="flex items-center justify-center min-h-svh">
-      <div className="flex flex-col items-center justify-center gap-4">
-        <h1 className="text-2xl font-bold">Hello World</h1>
-        <div className="flex gap-2">
-          <Button>Button</Button>
-          <Button variant="outline">Outline</Button>
-        </div>
-      </div>
-    </div>
-  )
+export default async function HomePage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  // Redirect based on auth status
+  if (user) {
+    redirect("/dashboard");
+  } else {
+    redirect("/login");
+  }
 }

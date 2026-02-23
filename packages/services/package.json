@@ -1,0 +1,19 @@
+{
+  "name": "@workspace/services",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./user": "./src/user/index.ts"
+  },
+  "dependencies": {
+    "@workspace/db": "workspace:*",
+    "@workspace/validations": "workspace:*"
+  },
+  "devDependencies": {
+    "@workspace/typescript-config": "workspace:*",
+    "drizzle-orm": "^0.36.4",
+    "typescript": "^5.9.3"
+  }
+}

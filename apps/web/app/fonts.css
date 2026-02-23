@@ -1,0 +1,5 @@
+/* Google Sans – app-wide (loaded in layout.tsx) */
+:root {
+  --font-sans: "Google Sans", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}

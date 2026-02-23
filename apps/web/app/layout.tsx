@@ -1,30 +1,34 @@
-import { Geist, Geist_Mono } from "next/font/google"
+import { Noto_Sans_Mono } from "next/font/google";
 
-import "@workspace/ui/globals.css"
-import { Providers } from "@/components/providers"
+import "@fontsource/google-sans/400.css";
+import "@fontsource/google-sans/500.css";
+import "@fontsource/google-sans/700.css";
+import "./fonts.css";
+import "@workspace/ui/styles/globals.css";
+import { Providers } from "@/components/providers";
+import { Toaster } from "sonner";
 
-const fontSans = Geist({
-  subsets: ["latin"],
-  variable: "--font-sans",
-})
-
-const fontMono = Geist_Mono({
+const fontMono = Noto_Sans_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
-})
+  weight: ["400", "500", "600", "700"],
+});
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode
+  children: React.ReactNode;
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${fontSans.variable} ${fontMono.variable} font-sans antialiased `}
+        className={`${fontMono.variable} font-sans antialiased`}
       >
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+          <Toaster position="bottom-right" />
+        </Providers>
       </body>
     </html>
-  )
+  );
 }
