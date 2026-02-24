@@ -7,7 +7,6 @@ export default async function ChatbotPage() {
     result?.data?.success && result.data.agents
       ? result.data.agents
       : undefined;
-
   return (
     <div className="flex h-[calc(100vh-8rem)] flex-col">
       <Chatbot initialAgents={initialAgents} />

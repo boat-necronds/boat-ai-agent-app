@@ -18,7 +18,7 @@ import {
 import { Badge } from "@workspace/ui/components/badge";
 import { Button } from "@workspace/ui/components/button";
 import Link from "next/link";
-import { Settings, Workflow } from "lucide-react";
+import { Settings, Workflow, Plus } from "lucide-react";
 
 export default async function AgentsPage() {
   const [agentsResult, sectionResult] = await Promise.all([
@@ -49,11 +49,19 @@ export default async function AgentsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">{section.title}</h1>
-        <p className="text-muted-foreground mt-2">
-          {section.description ?? "Manage agents for Chatbot"}
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">{section.title}</h1>
+          <p className="text-muted-foreground mt-2">
+            {section.description ?? "Manage agents for Chatbot"}
+          </p>
+        </div>
+        <Button asChild>
+          <Link href="/agents/new">
+            <Plus className="h-4 w-4 mr-2" />
+            Create agent
+          </Link>
+        </Button>
       </div>
 
       <Card>

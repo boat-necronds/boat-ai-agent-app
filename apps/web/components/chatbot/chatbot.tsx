@@ -6,7 +6,6 @@ import { getToolName, isToolUIPart } from "ai";
 import type { UIMessage } from "ai";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { useAgent } from "agents/react";
-
 import type { AttachmentData } from "@workspace/ui/components/ai-elements/attachments";
 import {
   Attachment,
@@ -71,7 +70,13 @@ import { SpeechInput } from "@workspace/ui/components/ai-elements/speech-input";
 import { Suggestion } from "@workspace/ui/components/ai-elements/suggestion";
 import { getAgentsAction, type AgentItem } from "@/actions/agents";
 import { Badge } from "@workspace/ui/components/badge";
-import { Bot, CheckIcon, ChevronDownIcon, LightbulbIcon, Cpu } from "lucide-react";
+import {
+  Bot,
+  CheckIcon,
+  ChevronDownIcon,
+  LightbulbIcon,
+  Cpu,
+} from "lucide-react";
 import { nanoid } from "nanoid";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -115,12 +120,28 @@ const DEFAULT_SUGGESTIONS = [
 ];
 
 const SUGGESTIONS_BY_SLUG: Record<string, string[]> = {
+  "fitness-coach": [
+    "Save my profile: goal to lose fat, 3 days/week, beginner",
+    "Design a weekly program for me",
+    "Calculate daily calories for 70kg, 175cm, 30 years old, male",
+    "Log that I ran 30 minutes today",
+    "Remind me to exercise in 2 minutes",
+  ],
   fitness: [
     "Save my profile: goal to lose fat, 3 days/week, beginner",
     "Design a weekly program for me",
     "Calculate daily calories for 70kg, 175cm, 30 years old, male",
     "Log that I ran 30 minutes today",
     "Remind me to exercise in 2 minutes",
+  ],
+  image: [
+    "Draw a sunset over the ocean",
+    "Create an image of a cute robot",
+    "Generate a minimalist logo for a coffee shop",
+  ],
+  voice: [
+    "Read this aloud: Hello, welcome to the voice agent",
+    "Convert to speech: The quick brown fox jumps over the lazy dog",
   ],
   food: [
     "Suggest a balanced meal for today",
@@ -131,24 +152,38 @@ const SUGGESTIONS_BY_SLUG: Record<string, string[]> = {
   ],
 };
 
-function agentMessagesToMessageTypes(agentMessages: UIMessage[]): MessageType[] {
+function agentMessagesToMessageTypes(
+  agentMessages: UIMessage[],
+): MessageType[] {
   return agentMessages.map((msg, idx) => {
-    const textParts = msg.parts?.filter(
-      (p): p is { type: "text"; text: string } => p.type === "text"
-    ) ?? [];
+    const textParts =
+      msg.parts?.filter(
+        (p): p is { type: "text"; text: string } => p.type === "text",
+      ) ?? [];
     const content = textParts.map((p) => p.text).join("");
     const toolParts = msg.parts?.filter(isToolUIPart) ?? [];
-    const tools: MessageType["tools"] = toolParts.map((part) => ({
-      name: getToolName(part),
-      description: "",
-      status: part.state ?? "partial-call",
-      parameters: (part as { args?: Record<string, unknown> }).args ?? {},
-      result:
+    const tools: MessageType["tools"] = toolParts.map((part) => {
+      const raw =
         "result" in part && part.result !== undefined
-          ? JSON.stringify(part.result)
-          : undefined,
-      error: undefined,
-    }));
+          ? part.result
+          : "output" in part &&
+              (part as { output?: unknown }).output !== undefined
+            ? (part as { output: unknown }).output
+            : undefined;
+      return {
+        name: getToolName(part),
+        description: "",
+        status: part.state ?? "partial-call",
+        parameters: (part as { args?: Record<string, unknown> }).args ?? {},
+        result:
+          raw !== undefined
+            ? typeof raw === "string"
+              ? raw
+              : JSON.stringify(raw)
+            : undefined,
+        error: undefined,
+      };
+    });
     return {
       key: `agent-${msg.role}-${idx}`,
       from: msg.role === "user" ? "user" : "assistant",
@@ -184,7 +219,7 @@ const PromptInputAttachmentsDisplay = () => {
     (id: string) => {
       attachments.remove(id);
     },
-    [attachments]
+    [attachments],
   );
 
   if (attachments.files.length === 0) {
@@ -228,13 +263,111 @@ function modelIdToLabel(id: string): string {
   return segment ?? id;
 }
 
-/** Default model list when agent has no allowedModels (match Worker allowlist) */
+/** Map app slug to Cloudflare Agents SDK agent name (binding name on boat-agent-all) */
+function getCfAgentName(slug: string | null | undefined): string {
+  if (slug === "image") return "ImageAgent";
+  if (slug === "fitness-coach") return "FitnessCoachAgent";
+  if (slug === "voice") return "VoiceAgent";
+  return "ChatAgent";
+}
+
+/** Default model list when agent has no allowedModels (generic / legacy) */
 const DEFAULT_MODEL_OPTIONS = [
   "@cf/openai/gpt-oss-20b",
   "@cf/openai/gpt-oss-120b",
   "@cf/meta/llama-4-scout-17b-16e-instruct",
   "@cf/zai-org/glm-4.7-flash",
 ];
+
+/** Model options per slug when DB has no allowedModels — must match boat-agent-all Worker */
+const MODEL_OPTIONS_BY_SLUG: Record<string, string[]> = {
+  "fitness-coach": [
+    "@cf/openai/gpt-oss-20b",
+    "@cf/openai/gpt-oss-120b",
+    "@cf/meta/llama-4-scout-17b-16e-instruct",
+    "@cf/zai-org/glm-4.7-flash",
+  ],
+  image: ["@cf/zai-org/glm-4.7-flash"],
+  voice: ["@cf/zai-org/glm-4.7-flash"],
+};
+
+const DEFAULT_MODEL_BY_SLUG: Record<string, string> = {
+  "fitness-coach": "@cf/openai/gpt-oss-20b",
+  image: "@cf/zai-org/glm-4.7-flash",
+  voice: "@cf/zai-org/glm-4.7-flash",
+};
+
+/** Render tool result (image / audio) — same as JobToolResultBlock */
+function ToolResultBlock({
+  name,
+  result,
+}: {
+  name: string;
+  result: string | undefined;
+}) {
+  if (!result) return null;
+  let parsed: {
+    imageBase64?: string;
+    mimeType?: string;
+    prompt?: string;
+    error?: string;
+    audio?: string;
+    text?: string;
+    languageFallback?: string;
+  };
+  try {
+    parsed = JSON.parse(result) as typeof parsed;
+  } catch {
+    return (
+      <div className="mt-2 rounded border bg-muted/50 p-2 text-xs font-mono">
+        <span className="font-medium">{name}</span>
+        <pre className="mt-1 overflow-auto whitespace-pre-wrap text-muted-foreground">
+          {result}
+        </pre>
+      </div>
+    );
+  }
+  if (name === "generateImage" && parsed.imageBase64 && !parsed.error) {
+    return (
+      <div className="mt-2 rounded border overflow-hidden">
+        <img
+          src={`data:${parsed.mimeType ?? "image/png"};base64,${parsed.imageBase64}`}
+          alt={parsed.prompt ?? "Generated image"}
+          className="max-w-full h-auto block"
+        />
+      </div>
+    );
+  }
+  if (name === "textToSpeech" && parsed.audio && !parsed.error) {
+    return (
+      <div className="mt-2 rounded border bg-muted/30 p-2">
+        {parsed.languageFallback && (
+          <p className="mb-1 text-xs text-amber-600 dark:text-amber-400">
+            {parsed.languageFallback}
+          </p>
+        )}
+        {parsed.text && (
+          <p className="mb-1 text-sm text-muted-foreground">
+            &quot;{parsed.text}&quot;
+          </p>
+        )}
+        <audio
+          controls
+          src={`data:${parsed.mimeType ?? "audio/mpeg"};base64,${parsed.audio}`}
+          className="w-full max-w-sm"
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 rounded border bg-muted/50 p-2 text-xs font-mono">
+      <span className="font-medium">{name}</span>
+      <pre className="mt-1 overflow-auto whitespace-pre-wrap text-muted-foreground">
+        {result}
+      </pre>
+    </div>
+  );
+}
 
 const Example = ({ initialAgents = [] }: ChatbotProps) => {
   const [text, setText] = useState<string>("");
@@ -254,12 +387,13 @@ const Example = ({ initialAgents = [] }: ChatbotProps) => {
       const list = result?.data?.success ? result.data.agents : undefined;
       if (list?.length) {
         setAgents(list);
-        const firstActiveId = list.find((a) => a.status === "active")?.id ?? list[0]?.id;
+        const firstActiveId =
+          list.find((a) => a.status === "active")?.id ?? list[0]?.id;
         if (firstActiveId) {
           setSelectedAgentId((prev) =>
             prev && list.some((a) => a.id === prev && a.status === "active")
               ? prev
-              : firstActiveId
+              : firstActiveId,
           );
         }
       }
@@ -272,23 +406,35 @@ const Example = ({ initialAgents = [] }: ChatbotProps) => {
   }, [agents, selectedAgentId]);
 
   const modelOptions = useMemo(() => {
-    const list = selectedAgent?.allowedModels ?? [];
-    return list.length > 0 ? list : DEFAULT_MODEL_OPTIONS;
-  }, [selectedAgent?.allowedModels]);
+    const fromDb = selectedAgent?.allowedModels ?? [];
+    if (fromDb.length > 0) return fromDb;
+    const slug = selectedAgent?.slug ?? "";
+    return MODEL_OPTIONS_BY_SLUG[slug] ?? DEFAULT_MODEL_OPTIONS;
+  }, [selectedAgent?.allowedModels, selectedAgent?.slug]);
 
   const effectiveModelId = useMemo(() => {
-    if (selectedModelId && modelOptions.includes(selectedModelId)) return selectedModelId;
-    return selectedAgent?.defaultModel ?? modelOptions[0] ?? null;
-  }, [selectedModelId, selectedAgent?.defaultModel, modelOptions]);
+    if (selectedModelId && modelOptions.includes(selectedModelId))
+      return selectedModelId;
+    const fromDb = selectedAgent?.defaultModel;
+    if (fromDb && modelOptions.includes(fromDb)) return fromDb;
+    const slug = selectedAgent?.slug ?? "";
+    const slugDefault = DEFAULT_MODEL_BY_SLUG[slug];
+    if (slugDefault && modelOptions.includes(slugDefault)) return slugDefault;
+    return modelOptions[0] ?? null;
+  }, [
+    selectedModelId,
+    selectedAgent?.defaultModel,
+    selectedAgent?.slug,
+    modelOptions,
+  ]);
 
   const suggestions = useMemo(
-    () =>
-      SUGGESTIONS_BY_SLUG[selectedAgent?.slug ?? ""] ?? DEFAULT_SUGGESTIONS,
-    [selectedAgent?.slug]
+    () => SUGGESTIONS_BY_SLUG[selectedAgent?.slug ?? ""] ?? DEFAULT_SUGGESTIONS,
+    [selectedAgent?.slug],
   );
 
   const agent = useAgent({
-    agent: "ChatAgent",
+    agent: getCfAgentName(selectedAgent?.slug),
     host: selectedAgent?.host ?? "",
   });
 
@@ -360,7 +506,7 @@ const Example = ({ initialAgents = [] }: ChatbotProps) => {
       });
       setText("");
     },
-    [sendMessage, status]
+    [sendMessage, status],
   );
 
   const handleSuggestionClick = useCallback(
@@ -370,7 +516,7 @@ const Example = ({ initialAgents = [] }: ChatbotProps) => {
       }
       sendMessage({ role: "user", parts: [{ type: "text", text: suggestion }] });
     },
-    [sendMessage, status]
+    [sendMessage, status],
   );
 
   const handleTranscriptionChange = useCallback((transcript: string) => {
@@ -381,18 +527,28 @@ const Example = ({ initialAgents = [] }: ChatbotProps) => {
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
       setText(event.target.value);
     },
-    []
+    [],
   );
 
-  const handleAgentSelect = useCallback((agentId: string, agentsList: AgentItem[]) => {
-    const agent = agentsList.find((a) => a.id === agentId);
-    const allowed = agent?.allowedModels ?? [];
-    const list = allowed.length > 0 ? allowed : DEFAULT_MODEL_OPTIONS;
-    const defaultModel = agent?.defaultModel ?? list[0] ?? null;
-    setSelectedAgentId(agentId);
-    setSelectedModelId(defaultModel);
-    setAgentSelectorOpen(false);
-  }, []);
+  const handleAgentSelect = useCallback(
+    (agentId: string, agentsList: AgentItem[]) => {
+      const a = agentsList.find((x) => x.id === agentId);
+      const allowed = a?.allowedModels ?? [];
+      const list =
+        allowed.length > 0
+          ? allowed
+          : (MODEL_OPTIONS_BY_SLUG[a?.slug ?? ""] ?? DEFAULT_MODEL_OPTIONS);
+      const defaultModel =
+        a?.defaultModel ??
+        DEFAULT_MODEL_BY_SLUG[a?.slug ?? ""] ??
+        list[0] ??
+        null;
+      setSelectedAgentId(agentId);
+      setSelectedModelId(defaultModel);
+      setAgentSelectorOpen(false);
+    },
+    [],
+  );
 
   const handleModelSelect = useCallback((modelId: string) => {
     setSelectedModelId(modelId);
@@ -406,7 +562,7 @@ const Example = ({ initialAgents = [] }: ChatbotProps) => {
       !text.trim() ||
       status === "streaming" ||
       status === "submitted",
-    [selectedAgent, text, status]
+    [selectedAgent, text, status],
   );
 
   return (
@@ -458,6 +614,13 @@ const Example = ({ initialAgents = [] }: ChatbotProps) => {
                       )}
                       <MessageContent>
                         <MessageResponse>{version.content}</MessageResponse>
+                        {message.tools?.map((tool) => (
+                          <ToolResultBlock
+                            key={tool.name}
+                            name={tool.name}
+                            result={tool.result}
+                          />
+                        ))}
                       </MessageContent>
                     </div>
                   </Message>
@@ -482,13 +645,22 @@ const Example = ({ initialAgents = [] }: ChatbotProps) => {
                         className="inline-flex gap-0.5 tabular-nums"
                         aria-hidden
                       >
-                        <span className="animate-pulse" style={{ animationDelay: "0ms" }}>
+                        <span
+                          className="animate-pulse"
+                          style={{ animationDelay: "0ms" }}
+                        >
                           .
                         </span>
-                        <span className="animate-pulse" style={{ animationDelay: "200ms" }}>
+                        <span
+                          className="animate-pulse"
+                          style={{ animationDelay: "200ms" }}
+                        >
                           .
                         </span>
-                        <span className="animate-pulse" style={{ animationDelay: "400ms" }}>
+                        <span
+                          className="animate-pulse"
+                          style={{ animationDelay: "400ms" }}
+                        >
                           .
                         </span>
                       </span>
@@ -597,7 +769,9 @@ const Example = ({ initialAgents = [] }: ChatbotProps) => {
                             <ModelSelectorItem
                               key={a.id}
                               disabled={!isActive}
-                              onSelect={() => isActive && handleAgentSelect(a.id, agents)}
+                              onSelect={() =>
+                                isActive && handleAgentSelect(a.id, agents)
+                              }
                               value={a.name}
                             >
                               <ModelSelectorName>{a.name}</ModelSelectorName>

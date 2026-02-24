@@ -1,6 +1,7 @@
 "use client";
 
 import type { UIMessage } from "ai";
+import { getToolName, isToolUIPart } from "ai";
 import { useAgentChat } from "@cloudflare/ai-chat/react";
 import { useAgent } from "agents/react";
 import {
@@ -25,12 +26,102 @@ const DEFAULT_MODEL_OPTIONS = [
   "@cf/zai-org/glm-4.7-flash",
 ];
 
+function getCfAgentName(slug: string | null | undefined): string {
+  if (slug === "image") return "ImageAgent";
+  if (slug === "fitness-coach") return "FitnessCoachAgent";
+  if (slug === "voice") return "VoiceAgent";
+  return "ChatAgent";
+}
+
+const MODEL_OPTIONS_BY_SLUG: Record<string, string[]> = {
+  "fitness-coach": [
+    "@cf/openai/gpt-oss-20b",
+    "@cf/openai/gpt-oss-120b",
+    "@cf/meta/llama-4-scout-17b-16e-instruct",
+    "@cf/zai-org/glm-4.7-flash",
+  ],
+  image: ["@cf/zai-org/glm-4.7-flash"],
+  voice: ["@cf/zai-org/glm-4.7-flash"],
+};
+
+const DEFAULT_MODEL_BY_SLUG: Record<string, string> = {
+  "fitness-coach": "@cf/openai/gpt-oss-20b",
+  image: "@cf/zai-org/glm-4.7-flash",
+  voice: "@cf/zai-org/glm-4.7-flash",
+};
+
 function getTextFromMessage(msg: UIMessage): string {
   const textParts =
     msg.parts?.filter(
       (p): p is { type: "text"; text: string } => p.type === "text"
     ) ?? [];
   return textParts.map((p) => p.text).join("");
+}
+
+/** Render tool result (image / audio) for job run chat — same as chatbot */
+function JobToolResultBlock({
+  name,
+  result,
+}: {
+  name: string;
+  result: string | undefined;
+}) {
+  if (!result) return null;
+  let parsed: {
+    imageBase64?: string;
+    mimeType?: string;
+    prompt?: string;
+    error?: string;
+    audio?: string;
+    text?: string;
+    languageFallback?: string;
+  };
+  try {
+    parsed = JSON.parse(result) as typeof parsed;
+  } catch {
+    return (
+      <div className="mt-2 rounded border bg-muted/50 p-2 text-xs font-mono">
+        <span className="font-medium">{name}</span>
+        <pre className="mt-1 overflow-auto whitespace-pre-wrap text-muted-foreground">{result}</pre>
+      </div>
+    );
+  }
+  if (name === "generateImage" && parsed.imageBase64 && !parsed.error) {
+    return (
+      <div className="mt-2 rounded border overflow-hidden">
+        <img
+          src={`data:${parsed.mimeType ?? "image/png"};base64,${parsed.imageBase64}`}
+          alt={parsed.prompt ?? "Generated image"}
+          className="max-w-full h-auto block"
+        />
+      </div>
+    );
+  }
+  if (name === "textToSpeech" && parsed.audio && !parsed.error) {
+    return (
+      <div className="mt-2 rounded border bg-muted/30 p-2">
+        {parsed.languageFallback && (
+          <p className="mb-1 text-xs text-amber-600 dark:text-amber-400">
+            {parsed.languageFallback}
+          </p>
+        )}
+        {parsed.text && (
+          <p className="mb-1 text-sm text-muted-foreground">&quot;{parsed.text}&quot;</p>
+        )}
+        <audio
+          controls
+          src={`data:${parsed.mimeType ?? "audio/mpeg"};base64,${parsed.audio}`}
+          className="w-full max-w-sm"
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="mt-2 rounded border bg-muted/50 p-2 text-xs font-mono">
+      <span className="font-medium">{name}</span>
+      <pre className="mt-1 overflow-auto whitespace-pre-wrap text-muted-foreground">{result}</pre>
+    </div>
+  );
 }
 
 export function JobRunChatDialog({
@@ -51,15 +142,24 @@ export function JobRunChatDialog({
   const hasAutoSaved = useRef(false);
 
   const modelOptions = useMemo(() => {
-    const list = agent.allowedModels ?? [];
-    return list.length > 0 ? list : DEFAULT_MODEL_OPTIONS;
-  }, [agent.allowedModels]);
+    const fromDb = agent.allowedModels ?? [];
+    if (fromDb.length > 0) return fromDb;
+    const slug = agent.slug ?? "";
+    return MODEL_OPTIONS_BY_SLUG[slug] ?? DEFAULT_MODEL_OPTIONS;
+  }, [agent.allowedModels, agent.slug]);
 
-  const effectiveModelId =
-    agent.defaultModel ?? modelOptions[0] ?? null;
+  const effectiveModelId = useMemo(() => {
+    if (agent.defaultModel && modelOptions.includes(agent.defaultModel)) {
+      return agent.defaultModel;
+    }
+    const slug = agent.slug ?? "";
+    const slugDefault = DEFAULT_MODEL_BY_SLUG[slug];
+    if (slugDefault && modelOptions.includes(slugDefault)) return slugDefault;
+    return modelOptions[0] ?? null;
+  }, [agent.defaultModel, agent.slug, modelOptions]);
 
   const chatAgent = useAgent({
-    agent: "ChatAgent",
+    agent: getCfAgentName(agent.slug),
     host: agent.host ?? "",
   });
 
@@ -67,6 +167,20 @@ export function JobRunChatDialog({
     agent: chatAgent,
     body: () => (effectiveModelId ? { model: effectiveModelId } : {}),
     getInitialMessages: null,
+    onToolCall: async (event) => {
+      if (
+        "addToolOutput" in event &&
+        event.toolCall.toolName === "getUserTimezone"
+      ) {
+        event.addToolOutput?.({
+          toolCallId: event.toolCall.toolCallId,
+          output: {
+            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            localTime: new Date().toLocaleTimeString(),
+          },
+        });
+      }
+    },
   });
 
   const { execute: executeUpdate, isExecuting: isSaving } = useAction(
@@ -153,23 +267,53 @@ export function JobRunChatDialog({
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto space-y-3 min-h-0">
-              {messages.map((msg, idx) => (
-                <div
-                  key={`${msg.role}-${idx}`}
-                  className={
-                    msg.role === "user"
-                      ? "rounded-lg border bg-muted/50 p-3 text-sm ml-4"
-                      : "rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm mr-4"
-                  }
-                >
-                  <p className="text-xs font-medium text-muted-foreground mb-1">
-                    {msg.role === "user" ? "You" : agent.name}
-                  </p>
-                  <p className="whitespace-pre-wrap">
-                    {getTextFromMessage(msg)}
-                  </p>
-                </div>
-              ))}
+              {messages.map((msg, idx) => {
+                const text = getTextFromMessage(msg);
+                const toolParts = msg.parts?.filter(isToolUIPart) ?? [];
+                const toolResult = (p: (typeof toolParts)[number]) => {
+                  const raw = p as { output?: unknown; result?: unknown };
+                  const result =
+                    raw.output !== undefined
+                      ? JSON.stringify(raw.output)
+                      : raw.result !== undefined
+                        ? JSON.stringify(raw.result)
+                        : undefined;
+                  return (
+                    <JobToolResultBlock
+                      name={getToolName(p)}
+                      result={result}
+                    />
+                  );
+                };
+                return (
+                  <div
+                    key={`${msg.role}-${idx}`}
+                    className={
+                      msg.role === "user"
+                        ? "rounded-lg border bg-muted/50 p-3 text-sm ml-4"
+                        : "rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm mr-4"
+                    }
+                  >
+                    <p className="text-xs font-medium text-muted-foreground mb-1">
+                      {msg.role === "user" ? "You" : agent.name}
+                    </p>
+                    {text ? (
+                      <p className="whitespace-pre-wrap">{text}</p>
+                    ) : null}
+                    {msg.role === "assistant" &&
+                      toolParts
+                        .filter(
+                          (p) =>
+                            p.state === "output-available" &&
+                            (("output" in p && p.output !== undefined) ||
+                              ("result" in p && p.result !== undefined))
+                        )
+                        .map((p, ti) => (
+                          <div key={ti}>{toolResult(p)}</div>
+                        ))}
+                  </div>
+                );
+              })}
               {isLoading && (
                 <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-sm mr-4">
                   <p className="text-xs font-medium text-muted-foreground mb-1">

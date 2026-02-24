@@ -2,6 +2,52 @@ import { db } from "@workspace/db";
 import { agents, type Agent } from "@workspace/db/schema";
 import { eq, asc } from "drizzle-orm";
 
+export type CreateAgentInput = {
+  title: string;
+  description?: string | null;
+  url: string;
+  agentType: string;
+  status?: "active" | "inactive" | "maintenance";
+  sortOrder?: number;
+  slug?: string | null;
+  allowedModels?: string | null;
+  defaultModel?: string | null;
+  type?: "platform" | "third_party";
+  skills?: string | null;
+  capabilities?: string | null;
+  pricingModel?: string | null;
+  price?: string | null;
+  mcpEndpoint?: string | null;
+};
+
+export async function createAgent(data: CreateAgentInput): Promise<Agent> {
+  const [created] = await db
+    .insert(agents)
+    .values({
+      title: data.title,
+      description: data.description ?? null,
+      url: data.url,
+      agentType: data.agentType,
+      status: data.status ?? "active",
+      sortOrder: data.sortOrder ?? 0,
+      slug: data.slug ?? null,
+      allowedModels: data.allowedModels ?? null,
+      defaultModel: data.defaultModel ?? null,
+      type: data.type ?? "platform",
+      skills: data.skills ?? null,
+      capabilities: data.capabilities ?? null,
+      pricingModel: data.pricingModel ?? null,
+      price: data.price ?? null,
+      mcpEndpoint: data.mcpEndpoint ?? null,
+    })
+    .returning();
+
+  if (!created) {
+    throw new Error("Failed to create agent");
+  }
+  return created;
+}
+
 export async function getAgents(): Promise<Agent[]> {
   return db
     .select()

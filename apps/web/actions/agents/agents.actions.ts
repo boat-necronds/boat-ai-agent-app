@@ -1,9 +1,52 @@
 "use server";
 
 import { authAction } from "@/lib/safe-action";
-import { updateAgent } from "@workspace/services";
+import { createAgent, updateAgent } from "@workspace/services";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+
+const createAgentSchema = z.object({
+  title: z.string().min(1, "Name is required"),
+  description: z.string().nullable().optional(),
+  url: z.string().url("Invalid URL"),
+  agentType: z.string().min(1, "Agent type is required"),
+  status: z.enum(["active", "inactive", "maintenance"]).optional(),
+  sortOrder: z.number().int().min(0).optional(),
+  slug: z.string().nullable().optional(),
+  allowedModels: z.string().nullable().optional(),
+  defaultModel: z.string().nullable().optional(),
+  type: z.enum(["platform", "third_party"]).optional(),
+  skills: z.string().nullable().optional(),
+  capabilities: z.string().nullable().optional(),
+  pricingModel: z.string().nullable().optional(),
+  price: z.string().nullable().optional(),
+  mcpEndpoint: z.string().nullable().optional(),
+});
+
+export const createAgentAction = authAction
+  .schema(createAgentSchema)
+  .action(async ({ parsedInput }) => {
+    const agent = await createAgent({
+      title: parsedInput.title,
+      description: parsedInput.description ?? null,
+      url: parsedInput.url,
+      agentType: parsedInput.agentType,
+      status: parsedInput.status ?? "active",
+      sortOrder: parsedInput.sortOrder ?? 0,
+      slug: parsedInput.slug ?? null,
+      allowedModels: parsedInput.allowedModels ?? null,
+      defaultModel: parsedInput.defaultModel ?? null,
+      type: parsedInput.type ?? "platform",
+      skills: parsedInput.skills ?? null,
+      capabilities: parsedInput.capabilities ?? null,
+      pricingModel: parsedInput.pricingModel ?? null,
+      price: parsedInput.price ?? null,
+      mcpEndpoint: parsedInput.mcpEndpoint ?? null,
+    });
+    revalidatePath("/agents");
+    revalidatePath(`/agents/${agent.id}`);
+    return { success: true, agent: { id: agent.id } };
+  });
 
 const updateAgentSchema = z.object({
   id: z.string().uuid(),
