@@ -1,4 +1,23 @@
+import {
+  Confirmation,
+  ConfirmationAction,
+  ConfirmationActions,
+  ConfirmationAccepted,
+  ConfirmationRejected,
+  ConfirmationRequest,
+  ConfirmationTitle,
+} from "@workspace/ui/components/ai-elements/confirmation";
 import { MessageResponse } from "@workspace/ui/components/ai-elements/message";
+import {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  ToolInput,
+  ToolOutput,
+} from "@workspace/ui/components/ai-elements/tool";
+import type { ToolPart as ToolPartType } from "@workspace/ui/components/ai-elements/tool";
+import type { ReactNode } from "react";
+import { CheckIcon, XIcon } from "lucide-react";
 
 /** Tool part state from AI SDK (input-streaming | input-available | output-available | output-error | approval-requested) */
 export type ToolPartState = string;
@@ -113,90 +132,132 @@ export function ToolPartBlock({
   const key = part.toolCallId ?? toolName;
   const state = part.state ?? "input-streaming";
 
+  const toolState = state as ToolPartType["state"];
+  const headerProps =
+    part.type === "dynamic-tool"
+      ? { type: part.type as "dynamic-tool", state: toolState, toolName: toolName }
+      : { type: part.type as `tool-${string}`, state: toolState };
+
   switch (state) {
     case "input-streaming":
       return (
-        <div
-          key={key}
-          className="mt-2 rounded border border-dashed bg-muted/30 px-2 py-1.5 text-xs text-muted-foreground"
-        >
-          <span className="font-medium">{toolName}</span> — Loading…
-        </div>
+        <Tool key={key} defaultOpen={false}>
+          <ToolHeader {...headerProps} />
+          <ToolContent>
+            {part.input != null && <ToolInput input={part.input} />}
+          </ToolContent>
+        </Tool>
       );
     case "input-available":
       return (
-        <div
-          key={key}
-          className="mt-2 rounded border bg-muted/30 p-2 text-xs font-mono"
-        >
-          <span className="font-medium">{toolName}</span>
-          <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-muted-foreground">
-            {typeof part.input === "object" && part.input !== null
-              ? JSON.stringify(part.input, null, 2)
-              : String(part.input ?? "")}
-          </pre>
-        </div>
+        <Tool key={key} defaultOpen={true}>
+          <ToolHeader {...headerProps} />
+          <ToolContent>
+            {part.input != null && <ToolInput input={part.input} />}
+          </ToolContent>
+        </Tool>
       );
     case "approval-requested":
+    case "approval-responded":
+    case "output-denied":
+      if (!part.approval) return null;
       return (
-        <div
-          key={key}
-          className="mt-2 rounded border border-amber-500/50 bg-amber-500/10 p-2 text-sm"
-        >
-          <span className="font-medium">{toolName}</span> — Approval requested
-          {part.approval?.id && addToolApprovalResponse && (
-            <div className="mt-2 flex gap-2">
-              <button
-                type="button"
+        <div key={key} className="mt-2">
+          <Confirmation approval={part.approval} state={state}>
+            <ConfirmationTitle>
+              <ConfirmationRequest>
+                <span className="font-medium">{toolName}</span> — Do you approve
+                this action?
+                {part.input != null && (
+                  <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-xs text-muted-foreground">
+                    {typeof part.input === "object" && part.input !== null
+                      ? JSON.stringify(part.input, null, 2)
+                      : String(part.input)}
+                  </pre>
+                )}
+              </ConfirmationRequest>
+              <ConfirmationAccepted>
+                <span className="inline-flex items-center gap-1.5">
+                  <CheckIcon className="size-4" />
+                  You approved this tool execution
+                </span>
+              </ConfirmationAccepted>
+              <ConfirmationRejected>
+                <span className="inline-flex items-center gap-1.5">
+                  <XIcon className="size-4" />
+                  You rejected this tool execution
+                </span>
+              </ConfirmationRejected>
+            </ConfirmationTitle>
+            <ConfirmationActions>
+              <ConfirmationAction
+                variant="outline"
                 onClick={() =>
-                  addToolApprovalResponse({
-                    id: part.approval!.id,
-                    approved: true,
-                  })
-                }
-                className="rounded bg-primary px-2 py-1 text-xs text-primary-foreground hover:opacity-90"
-              >
-                Approve
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  addToolApprovalResponse({
+                  addToolApprovalResponse?.({
                     id: part.approval!.id,
                     approved: false,
                   })
                 }
-                className="rounded border px-2 py-1 text-xs hover:bg-muted"
               >
-                Deny
-              </button>
-            </div>
-          )}
+                Reject
+              </ConfirmationAction>
+              <ConfirmationAction
+                variant="default"
+                onClick={() =>
+                  addToolApprovalResponse?.({
+                    id: part.approval!.id,
+                    approved: true,
+                  })
+                }
+              >
+                Approve
+              </ConfirmationAction>
+            </ConfirmationActions>
+          </Confirmation>
         </div>
       );
     case "output-available":
       return (
-        <div key={key} className="mt-2">
-          <ToolOutputDisplay name={toolName} output={part.output} />
-        </div>
+        <Tool key={key} defaultOpen={true}>
+          <ToolHeader {...headerProps} />
+          <ToolContent>
+            {part.input != null && <ToolInput input={part.input} />}
+            <ToolOutput
+              output={
+                <ToolOutputDisplay name={toolName} output={part.output} />
+              }
+              errorText={undefined}
+            />
+          </ToolContent>
+        </Tool>
       );
     case "output-error":
       return (
-        <div
-          key={key}
-          className="mt-2 rounded border border-destructive/50 bg-destructive/10 p-2 text-xs text-destructive"
-        >
-          <span className="font-medium">{toolName}</span> — {part.errorText ?? "Error"}
-        </div>
+        <Tool key={key} defaultOpen={true}>
+          <ToolHeader {...headerProps} />
+          <ToolContent>
+            {part.input != null && <ToolInput input={part.input} />}
+            <ToolOutput
+              output={null}
+              errorText={part.errorText ?? "Error"}
+            />
+          </ToolContent>
+        </Tool>
       );
     default:
       return (
-        <div
-          key={key}
-          className="mt-2 rounded border bg-muted/30 p-2 text-xs text-muted-foreground"
-        >
-          <span className="font-medium">{toolName}</span> — {state}
-        </div>
+        <Tool key={key} defaultOpen={state === "output-available" || state === "output-error"}>
+          <ToolHeader {...headerProps} />
+          <ToolContent>
+            {part.input != null && <ToolInput input={part.input} />}
+            {(part.output != null || part.errorText != null) && (
+              <ToolOutput
+                output={part.output as ReactNode}
+                errorText={part.errorText}
+              />
+            )}
+          </ToolContent>
+        </Tool>
       );
   }
 }

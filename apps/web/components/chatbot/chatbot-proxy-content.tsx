@@ -2,6 +2,7 @@ import type { PromptInputMessage } from "@workspace/ui/components/ai-elements/pr
 import {
   Conversation,
   ConversationContent,
+  ConversationEmptyState,
   ConversationScrollButton,
 } from "@workspace/ui/components/ai-elements/conversation";
 import {
@@ -10,11 +11,17 @@ import {
   MessageBranchContent,
   MessageContent,
 } from "@workspace/ui/components/ai-elements/message";
+import {
+  Reasoning,
+  ReasoningContent,
+  ReasoningTrigger,
+} from "@workspace/ui/components/ai-elements/reasoning";
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithToolCalls,
 } from "ai";
+import { MessageSquare } from "lucide-react";
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
 import type { AgentItem } from "@/actions/agents";
@@ -115,6 +122,13 @@ export function ProxyChatContent({
     <>
       <Conversation>
         <ConversationContent>
+          {messages.length === 0 && (
+            <ConversationEmptyState
+              icon={<MessageSquare className="size-12" />}
+              title="Start a conversation"
+              description="Type a message below to begin chatting"
+            />
+          )}
           {messages.map((message) => {
             const from =
               message.role === "user" ? "user" : "assistant";
@@ -137,18 +151,14 @@ export function ProxyChatContent({
             );
           })}
           {(displayStatus === "submitted" || displayStatus === "streaming") && (
-            <MessageBranch defaultBranch={0} key="thinking">
+            <MessageBranch defaultBranch={0} key="reasoning">
               <MessageBranchContent>
-                <Message from="assistant" key="thinking-msg">
+                <Message from="assistant" key="reasoning-msg">
                   <MessageContent>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span className="inline-flex gap-0.5 tabular-nums" aria-hidden>
-                        <span className="animate-pulse" style={{ animationDelay: "0ms" }}>.</span>
-                        <span className="animate-pulse" style={{ animationDelay: "200ms" }}>.</span>
-                        <span className="animate-pulse" style={{ animationDelay: "400ms" }}>.</span>
-                      </span>
-                      <span>Thinking...</span>
-                    </div>
+                    <Reasoning className="w-full" isStreaming>
+                      <ReasoningTrigger />
+                      <ReasoningContent>{""}</ReasoningContent>
+                    </Reasoning>
                   </MessageContent>
                 </Message>
               </MessageBranchContent>
