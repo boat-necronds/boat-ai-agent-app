@@ -2,6 +2,40 @@ import { db } from "@workspace/db";
 import { agents, type Agent } from "@workspace/db/schema";
 import { eq, asc } from "drizzle-orm";
 
+/** ชุดคอลัมน์ที่ตาราง agents ส่วนใหญ่มี (รองรับทั้ง schema เต็มและตารางที่ยังไม่มี type, total_jobs ฯลฯ) */
+/** รวม chat_transport (ต้องรัน migration 0009 แล้ว) */
+const agentsListColumns = {
+  id: agents.id,
+  title: agents.title,
+  description: agents.description,
+  url: agents.url,
+  agentType: agents.agentType,
+  status: agents.status,
+  sortOrder: agents.sortOrder,
+  slug: agents.slug,
+  allowedModels: agents.allowedModels,
+  defaultModel: agents.defaultModel,
+  chatTransport: agents.chatTransport,
+  createdAt: agents.createdAt,
+  updatedAt: agents.updatedAt,
+} as const;
+
+export type AgentListRow = {
+  id: string;
+  title: string | null;
+  description: string | null;
+  url: string;
+  agentType: string;
+  status: string;
+  sortOrder: number;
+  slug: string | null;
+  allowedModels: string | null;
+  defaultModel: string | null;
+  chatTransport: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 export type CreateAgentInput = {
   title: string;
   description?: string | null;
@@ -48,20 +82,22 @@ export async function createAgent(data: CreateAgentInput): Promise<Agent> {
   return created;
 }
 
-export async function getAgents(): Promise<Agent[]> {
+/** โหลดรายการ agents โดยเลือกเฉพาะคอลัมน์ที่ตารางส่วนใหญ่มี (ไม่ต้องมี type, total_jobs ฯลฯ) */
+export async function getAgents(): Promise<AgentListRow[]> {
   return db
-    .select()
+    .select(agentsListColumns)
     .from(agents)
     .orderBy(asc(agents.sortOrder), asc(agents.createdAt));
 }
 
-export async function getAgentById(id: string): Promise<Agent | null> {
-  const [agent] = await db
-    .select()
+/** โหลด agent ตาม id (เลือกเฉพาะคอลัมน์ที่ตารางส่วนใหญ่มี) */
+export async function getAgentById(id: string): Promise<AgentListRow | null> {
+  const [row] = await db
+    .select(agentsListColumns)
     .from(agents)
     .where(eq(agents.id, id))
     .limit(1);
-  return agent ?? null;
+  return row ?? null;
 }
 
 export type UpdateAgentInput = Partial<{

@@ -1,6 +1,10 @@
 import { getAgentsAction } from "@/actions/agents";
-import Chatbot from "@/components/chatbot/chatbot";
+import Chatbot from "@/components/chatbot/chatbot-v2";
 
+/**
+ * หน้าแชทรวมเดียว — รองรับทั้ง agent แบบ proxy (AI SDK) และ Cloudflare Worker
+ * ใช้ useChat + /api/agents/[id]/chat ทุก agent
+ */
 export default async function ChatbotPage() {
   const result = await getAgentsAction();
   const initialAgents =

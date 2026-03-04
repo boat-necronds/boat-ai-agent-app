@@ -181,7 +181,7 @@ export const runJobAction = authAction
     let output: string;
     let outputFiles: string[] | null = null;
 
-    const endpoint = agent.mcpEndpoint?.trim();
+    const endpoint = (agent as { mcpEndpoint?: string | null }).mcpEndpoint?.trim();
     if (endpoint && isValidUrl(endpoint)) {
       try {
         const res = await fetch(endpoint, {

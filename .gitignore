@@ -34,3 +34,7 @@ npm-debug.log*
 # Misc
 .DS_Store
 *.pem
+
+
+apps/web/components/chatbot/chatbot.tsx
+.chatbot.tsx

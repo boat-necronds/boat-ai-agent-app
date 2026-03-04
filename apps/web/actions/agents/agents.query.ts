@@ -14,6 +14,8 @@ export type AgentItem = {
   description?: string | null;
   url?: string | null;
   status: AgentStatus;
+  /** 'proxy' = AI SDK forward, 'cloudflare' = Cloudflare Worker */
+  chatTransport?: string | null;
   allowedModels?: string[] | null;
   defaultModel?: string | null;
   /** PRD: 'platform' | 'third_party' */
@@ -33,19 +35,11 @@ export const getAgentsAction = action.action(async () => {
   const agents = await getAgents();
   const list: AgentItem[] = agents.map((row) => {
     let allowedModels: string[] | null = null;
-    let skills: string[] | null = null;
     if (row.allowedModels) {
       try {
         allowedModels = JSON.parse(row.allowedModels) as string[];
       } catch {
         allowedModels = null;
-      }
-    }
-    if (row.skills) {
-      try {
-        skills = JSON.parse(row.skills) as string[];
-      } catch {
-        skills = null;
       }
     }
     return {
@@ -55,18 +49,19 @@ export const getAgentsAction = action.action(async () => {
       host: row.url ?? "",
       slug: row.slug ?? null,
       status: (row.status ?? "active") as AgentStatus,
+      chatTransport: row.chatTransport ?? null,
       allowedModels: allowedModels ?? null,
       defaultModel: row.defaultModel ?? null,
-      type: row.type ?? null,
-      skills: skills ?? null,
-      capabilities: row.capabilities ?? null,
-      pricingModel: row.pricingModel ?? null,
-      price: row.price ?? null,
-      rating: row.rating ?? null,
-      totalJobs: row.totalJobs ?? 0,
-      completedJobs: row.completedJobs ?? 0,
-      mcpEndpoint: row.mcpEndpoint ?? null,
-      approvedAt: row.approvedAt ?? null,
+      type: null,
+      skills: null,
+      capabilities: null,
+      pricingModel: null,
+      price: null,
+      rating: null,
+      totalJobs: 0,
+      completedJobs: 0,
+      mcpEndpoint: null,
+      approvedAt: null,
     };
   });
   return { success: true, agents: list };
@@ -74,10 +69,24 @@ export const getAgentsAction = action.action(async () => {
 
 const getAgentByIdSchema = z.object({ id: z.string().uuid() });
 
+/** Agent จาก getAgentById อาจไม่มีคอลัมน์เพิ่ม (type, skills, total_jobs ฯลฯ) */
+type AgentFromDb = Awaited<ReturnType<typeof getAgentById>> & Partial<{
+  type: string | null;
+  skills: string | null;
+  capabilities: string | null;
+  pricingModel: string | null;
+  price: string | null;
+  rating: string | null;
+  totalJobs: number;
+  completedJobs: number;
+  mcpEndpoint: string | null;
+  approvedAt: Date | null;
+}>;
+
 export const getAgentByIdAction = action
   .schema(getAgentByIdSchema)
   .action(async ({ parsedInput }) => {
-    const agent = await getAgentById(parsedInput.id);
+    const agent = await getAgentById(parsedInput.id) as AgentFromDb | null;
     if (!agent) {
       return { success: false, error: "Agent not found" };
     }

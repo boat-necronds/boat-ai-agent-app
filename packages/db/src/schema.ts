@@ -1,3 +1,14 @@
+/**
+ * Schema ตรงกับ database ล่าสุด (migrations 0000–0009).
+ * - 0000: accounts, agents (ฐาน)
+ * - 0001: agents.status, sort_order, slug
+ * - 0002: page_sections
+ * - 0003: agents.allowed_models, default_model
+ * - 0004: agents (marketplace fields), jobs
+ * - 0005: job_logs | 0006: reviews | 0007: jobs.revision_feedback
+ * - 0009: agents.chat_transport
+ * - 0010: seed เท่านั้น
+ */
 import {
   boolean,
   integer,
@@ -20,6 +31,8 @@ export const agents = pgTable("agents", {
   slug: text("slug"),
   allowedModels: text("allowed_models"),
   defaultModel: text("default_model"),
+  /** 'proxy' = forward ผ่าน Next API (AI SDK format), 'cloudflare' = Cloudflare Worker (ใช้ adapter ใน API) */
+  chatTransport: text("chat_transport").default("proxy"),
   // PRD: marketplace
   /** 'platform' | 'third_party' */
   type: text("type").default("platform").notNull(),
